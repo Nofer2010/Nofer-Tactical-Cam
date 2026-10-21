@@ -57,7 +57,7 @@
             filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(120%) grayscale(60%);
         }
         
-        /* Traffic Layer Filter - Make it pop more on dark map */
+        /* Traffic Layer Filter */
         .traffic-tiles {
             filter: brightness(1.2) contrast(1.5) saturate(1.5);
             opacity: 0.8;
@@ -176,8 +176,6 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .btn-tactical-yellow { border: 1px solid var(--accent-gold); color: var(--accent-gold); background: rgba(255, 215, 0, 0.05); }
-        .btn-tactical-yellow:active { background: var(--accent-gold); color: #000; }
         .data-grid-item { border-right: 1px solid rgba(255,255,255,0.1); }
         .data-grid-item:last-child { border-right: none; }
         .leaflet-control-zoom { border: none !important; margin-right: 10px !important; margin-bottom: 80px !important;}
@@ -245,16 +243,23 @@
                     </div>
                 </div>
 
+                <!-- VIDEO CONTAINER -->
                 <div class="cam-container mb-2 rounded-sm">
                     <div class="absolute top-2 left-2 z-10 bg-black/60 px-2 py-1 flex items-center border border-red-900/50">
                         <div class="w-2 h-2 rounded-full bg-red-500 blink mr-2"></div>
                         <span class="text-red-400 text-xs font-bold tracking-wider">LIVE TRAFFIC</span>
                     </div>
                     
+                    <!-- Pesan Error Jika Stream CCTV Mati/Diblokir -->
+                    <div id="video-error" class="hidden absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/90 text-red-500 border border-red-900">
+                        <i class="fa-solid fa-triangle-exclamation text-3xl mb-2 blink"></i>
+                        <span class="text-sm tracking-widest font-bold">SIGNAL LOST</span>
+                        <span class="text-[9px] text-gray-400 mt-1 uppercase text-center px-4">Stream M3U8 sedang offline atau<br>diblokir oleh sistem keamanan server asal.</span>
+                    </div>
+
                     <div class="scanlines"></div>
                     <div class="static-overlay"></div>
                     
-                    <!-- REALTIME HLS VIDEO TAG -->
                     <video id="feed-video" class="cam-feed" autoplay playsinline muted></video>
                     
                     <div class="absolute bottom-2 left-2 z-10 text-white/70 text-xs text-shadow-md">
@@ -269,7 +274,7 @@
                     </div>
                     <div class="data-grid-item px-2 flex flex-col justify-center">
                         <span class="text-[8px] text-gray-500">STATUS</span>
-                        <span class="text-[10px] font-bold text-green-400 leading-tight">ACTIVE /<br>LIVE</span>
+                        <span id="stream-status" class="text-[10px] font-bold text-green-400 leading-tight">ACTIVE /<br>LIVE</span>
                     </div>
                     <div class="data-grid-item px-2 flex flex-col items-center justify-center text-gray-400 cursor-pointer">
                         <i class="fa-solid fa-tower-broadcast text-sm mb-1"></i><span class="text-[8px] text-center leading-none">RAW<br>FEED</span>
@@ -298,16 +303,13 @@
 
     <script>
         // 1. INIT MAP
-        let userLocation = [-6.2088, 106.8456]; // Default to Jakarta if GPS is offline
+        let userLocation = [-6.2088, 106.8456]; 
         const map = L.map('map', { zoomControl: false, attributionControl: false }).setView(userLocation, 14);
 
-        // BASE MAP (Dark Mode OSM)
         const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19, className: 'dark-map-tiles'
         }).addTo(map);
         
-        // REAL-TIME TRAFFIC LAYER (Google Maps Traffic - Menampilkan Merah/Kuning/Hijau Kemacetan)
-        // Parameter lyrs=h,traffic hanya menampilkan garis jalan dan kemacetan secara transparan
         const liveTrafficLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=h,traffic&x={x}&y={y}&z={z}', {
             maxZoom: 19, className: 'traffic-tiles'
         });
@@ -323,7 +325,7 @@
         let isFetchingTargets = false;
         let isTrafficOn = false;
 
-        // FITUR TOMBOL RADAR MACET
+        // RADAR MACET TOGGLE
         document.getElementById('toggle-traffic').addEventListener('click', function() {
             if(isTrafficOn) {
                 map.removeLayer(liveTrafficLayer);
@@ -338,7 +340,7 @@
             }
         });
 
-        // Lacak lokasi GPS Asli
+        // GPS LOCATION
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition((pos) => {
                 userLocation = [pos.coords.latitude, pos.coords.longitude];
@@ -348,7 +350,7 @@
             }, () => fetchGlobalTargets());
         } else { fetchGlobalTargets(); }
 
-        // SCANNER: Setiap Peta Digeser, Pindai CCTV Asli (Traffic Lights / Surveillance)
+        // SCAN CCTV POINTS ON MOVE
         map.on('moveend', () => {
             if(map.getZoom() >= 13) {
                 document.getElementById('scan-status').textContent = "SCANNING CAMERAS...";
@@ -368,7 +370,6 @@
                 const north = bounds.getNorth();
                 const east = bounds.getEast();
 
-                // Query mencari kamera pengawas lalu lintas asli di koordinat dunia nyata
                 const query = `[out:json][timeout:10];(node["man_made"="surveillance"](${south},${west},${north},${east});node["highway"="traffic_signals"](${south},${west},${north},${east}););out 25;`;
                 const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
                 
@@ -403,6 +404,12 @@
             loadingState.classList.remove('hidden');
             contentState.classList.add('hidden');
             contentState.style.display = 'none';
+            
+            // Sembunyikan pesan error saat pertama dibuka
+            document.getElementById('video-error').classList.add('hidden');
+            document.getElementById('stream-status').innerHTML = 'ACTIVE /<br>LIVE';
+            document.getElementById('stream-status').classList.replace('text-red-500', 'text-green-400');
+
             startHLSStream();
 
             document.getElementById('meta-id').textContent = `CAM-${Math.floor(Math.random()*9000)+1000}-${Math.floor(Math.random()*9000)+1000}`;
@@ -430,33 +437,49 @@
         }
 
         // ==========================================
-        // 4. CCTV VIDEO SYSTEM
+        // 4. CCTV VIDEO SYSTEM (WITH ERROR HANDLING)
         // ==========================================
         function startHLSStream() {
             const videoEl = document.getElementById('feed-video');
+            const videoError = document.getElementById('video-error');
+            const statusEl = document.getElementById('stream-status');
             
-            // Menggunakan live stream jalanan publik yang selalu aktif sebagai representasi kamera.
-            // (Catatan: Untuk mendapatkan video yang 100% presisi per perempatan di Indonesia secara gratis tidaklah mungkin 
-            // tanpa membobol server pemerintah. Namun live traffic radar (warna merah/hijau di map) 100% akurat).
+            // Menggunakan Server Video Uji Coba yang sangat stabil sebagai contoh (bukan video mati)
             const realCctvLinks = [
-                "https://d2e1asnsl7br7b.cloudfront.net/7782e205e72f43aeb4a480973ebc3fbc/index.m3u8", // Live Traffic Test Stream
-                "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8"
+                "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" // Link Test yang pasti menyala
+                // Nanti abang bisa tambahkan link CCTV Dishub abang di sini, beri tanda kutip dan koma.
             ];
             const selectedStream = realCctvLinks[Math.floor(Math.random() * realCctvLinks.length)];
+
+            function showVideoError() {
+                videoError.classList.remove('hidden');
+                statusEl.innerHTML = 'OFFLINE /<br>BLOCKED';
+                statusEl.classList.replace('text-green-400', 'text-red-500');
+            }
 
             if (Hls.isSupported()) {
                 if(hlsInstance) { hlsInstance.destroy(); }
                 hlsInstance = new Hls();
                 hlsInstance.loadSource(selectedStream);
                 hlsInstance.attachMedia(videoEl);
+                
                 hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
-                    videoEl.play().catch(e => console.log("Autoplay dicegah", e));
+                    videoEl.play().catch(e => console.log("Autoplay dicegah browser", e));
                 });
+
+                // DETEKSI JIKA VIDEO MATI/ERROR
+                hlsInstance.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        showVideoError();
+                    }
+                });
+
             } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
                 videoEl.src = selectedStream;
                 videoEl.addEventListener('loadedmetadata', function() {
-                    videoEl.play().catch(e => console.log("Autoplay dicegah", e));
+                    videoEl.play().catch(e => console.log("Autoplay dicegah browser", e));
                 });
+                videoEl.onerror = showVideoError;
             }
         }
 
